@@ -53,6 +53,7 @@ import Graphics.Rendering.Cairo ( renderWith
                                 , createImageSurface
                                 , Format(FormatRGB16565)
                                 , paint
+                                , moveTo
                                 )
 import Graphics.Rendering.Pango hiding ( Color(..)
                                        , updateLayout
@@ -273,6 +274,7 @@ printStringXMF dpy drw fs@(Pango desc) gc fc bc x y s = do
   sur <- io $ createImageSurface FormatRGB16565 (fi gi) (fi $ a + d)
   io $ renderWith sur $ do
       paint
+      moveTo (x - fi gi) (y - fi a)
       let red   = fi $ fcolor .&. 0xFF0000 `shiftR` 32
           green = fi $ fcolor .&. 0xFF00   `shiftR` 16
           blue  = fi $ fcolor .&. 0xFF     `shiftR` 0

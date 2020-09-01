@@ -79,6 +79,7 @@ library
 
     if flag(use_pango)
         build-depends: pango >= 0.13.8
+                     , cairo >= 0.13.8
         cpp-options: -DPANGO
 
     if true
