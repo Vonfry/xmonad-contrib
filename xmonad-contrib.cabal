@@ -46,6 +46,9 @@ source-repository head
 flag use_xft
   description: Use Xft to render text
 
+flag use_pango
+  description: Use Pango to render text
+
 flag testing
   description: Testing mode
   manual: True
@@ -73,6 +76,10 @@ library
     if flag(use_xft)
         build-depends: X11-xft >= 0.2
         cpp-options: -DXFT
+
+    if flag(use_pango)
+        build-depends: pango >= 0.13.8
+        cpp-options: -DPANGO
 
     if true
         ghc-options:    -fwarn-tabs -Wall

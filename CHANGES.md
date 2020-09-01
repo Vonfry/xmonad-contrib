@@ -70,6 +70,11 @@
 
 ### Bug Fixes and Minor Changes
 
+  * `XMonad.Util.Font`
+
+      Added pango to render text. Modified these function `XMonadFont` and data
+      `printStringXMF`.
+
   * `XMonad.Util.NamedScratchpad`
 
      Added two new exported functions to the module:

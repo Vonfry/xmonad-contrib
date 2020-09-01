@@ -47,11 +47,29 @@ import Graphics.X11.Xft
 import Graphics.X11.Xrender
 #endif
 
+#ifdef PANGO
+import Data.Bits
+import Graphics.Rendering.Cairo ( renderWith
+                                , createImageSurface
+                                , Format(FormatRGB16565)
+                                , paint
+                                )
+import Graphics.Rendering.Pango hiding ( Color(..)
+                                       , updateLayout
+                                       , LayoutAlignment (..)
+                                       , Rectangle(..)
+                                       )
+import qualified Graphics.Rendering.Pango as P
+#endif
+
 -- Hide the Core Font/Xft switching here
 data XMonadFont = Core FontStruct
                 | Utf8 FontSet
 #ifdef XFT
                 | Xft  XftFont
+#endif
+#ifdef PANGO
+                | Pango FontDescription
 #endif
 
 -- $usage
@@ -109,6 +127,8 @@ releaseUtf8Font fs = do
 
 -- | When initXMF gets a font name that starts with 'xft:' it switches to the Xft backend
 -- Example: 'xft: Sans-10'
+-- You can use 'pango:' to switch to the pango backend as wel.
+-- Example: 'pango:Sans 10'
 initXMF :: String -> X XMonadFont
 initXMF s =
 #ifdef XFT
@@ -118,9 +138,20 @@ initXMF s =
         return (Xft xftdraw)
   else
 #endif
+#ifdef PANGO
+  if pangoPrefix `isPrefixOf` s then
+     do dpy <- asks display
+        desc <- io $ fontDescriptionFromString $ drop (length pangoPrefix) s
+        return (Pango desc)
+  else
+#endif
       Utf8 <$> initUtf8Font s
+  where
 #ifdef XFT
-  where xftPrefix = "xft:"
+      xftPrefix = "xft:"
+#endif
+#ifdef PANGO
+      pangoPrefix = "pango:"
 #endif
 
 releaseXMF :: XMonadFont -> X ()
@@ -128,6 +159,10 @@ releaseXMF :: XMonadFont -> X ()
 releaseXMF (Xft xftfont) = do
   dpy <- asks display
   io $ xftFontClose dpy xftfont
+#endif
+#ifdef PANGO
+-- Pango will automatically realease it(see ''), so nothing does here.
+releaseXMF (Pango _) = return ()
 #endif
 releaseXMF (Utf8 fs) = releaseUtf8Font fs
 releaseXMF (Core fs) = releaseCoreFont fs
@@ -137,9 +172,18 @@ textWidthXMF :: MonadIO m => Display -> XMonadFont -> String -> m Int
 textWidthXMF _   (Utf8 fs) s = return $ fi $ wcTextEscapement fs s
 textWidthXMF _   (Core fs) s = return $ fi $ textWidth fs s
 #ifdef XFT
-textWidthXMF dpy (Xft xftdraw) s = liftIO $ do
+textWidthXMF dpy (Xft xftdraw) s = io $ do
     gi <- xftTextExtents dpy xftdraw s
     return $ xglyphinfo_xOff gi
+#endif
+#ifdef PANGO
+textWidthXMF dpy (Pango desc) s = io $ do
+    ct <- cairoCreateContext Nothing
+    contextSetFontDescription ct desc
+    layout <- layoutEmpty ct
+    layoutSetText layout s
+    width  <- layoutGetWidth layout
+    return $ ceiling $ fromJust width
 #endif
 
 textExtentsXMF :: MonadIO m => XMonadFont -> String -> m (Int32,Int32)
@@ -156,6 +200,15 @@ textExtentsXMF (Xft xftfont) _ = io $ do
   ascent  <- fi <$> xftfont_ascent  xftfont
   descent <- fi <$> xftfont_descent xftfont
   return (ascent, descent)
+#endif
+#ifdef PANGO
+textExtentsXMF (Pango desc) s = io $ do
+    ct <- cairoCreateContext Nothing
+    contextSetFontDescription ct desc
+    m  <- contextGetMetrics ct desc emptyLanguage
+    let as = fi $ ceiling $ ascent  m
+        ds = fi $ ceiling $ descent m
+    return (as, ds)
 #endif
 
 -- | String position
@@ -205,6 +258,30 @@ printStringXMF dpy drw fs@(Xft font) gc fc bc x y s = do
   io $ withXftDraw dpy drw visual colormap $
          \draw -> withXftColorName dpy visual colormap fc $
                    \color -> xftDrawString draw color font x y s
+#endif
+#ifdef PANGO
+printStringXMF dpy drw fs@(Pango desc) gc fc bc x y s = do
+  bcolor <- stringToPixel dpy bc
+  fcolor <- stringToPixel dpy fc
+  (a,d)  <- textExtentsXMF fs s
+  gi <- io $ textWidthXMF dpy fs s
+  io $ setForeground dpy gc bcolor
+  io $ fillRectangle dpy drw gc (x - fi gi)
+                                (y - fi a)
+                                (fi gi)
+                                (fi $ a + d)
+  sur <- io $ createImageSurface FormatRGB16565 (fi gi) (fi $ a + d)
+  io $ renderWith sur $ do
+      paint
+      let red   = fi $ fcolor .&. 0xFF0000 `shiftR` 32
+          green = fi $ fcolor .&. 0xFF00   `shiftR` 16
+          blue  = fi $ fcolor .&. 0xFF     `shiftR` 0
+      setSourceColor $ P.Color red green blue
+      layout <- createLayout s
+      io $ layoutSetFontDescription layout (Just desc)
+      P.updateLayout layout
+      showLayout layout
+  -- TODO render surface on screen?
 #endif
 
 -- | Short-hand for 'fromIntegral'
